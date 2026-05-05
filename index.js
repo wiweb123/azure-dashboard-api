@@ -20,7 +20,7 @@ const auth = Buffer.from(`:${PAT}`).toString('base64');
 
 
 // ===============================
-// 🧠 CACHE GLOBAL (IMPORTANTE)
+// 🧠 CACHE GLOBAL
 // ===============================
 let cache = {
   dashboard: null,
@@ -30,7 +30,7 @@ let cache = {
 
 
 // ===============================
-// 🧠 SYNC PRINCIPAL (AZURE → CACHE)
+// 🧠 SYNC PRINCIPAL
 // ===============================
 async function syncDashboard() {
   if (cache.loading) return;
@@ -106,7 +106,10 @@ async function syncDashboard() {
 
       const status = fields["System.State"];
       const title = fields["System.Title"];
-      const user = fields["System.AssignedTo"]?.displayName || "Sem responsável";
+
+      const user = fields["System.AssignedTo"]
+        ? fields["System.AssignedTo"].displayName || fields["System.AssignedTo"].uniqueName
+        : "Sem responsável";
 
       const card = {
         id: item.id,
@@ -133,9 +136,6 @@ async function syncDashboard() {
       taxaConclusao: u.total > 0 ? Math.round((u.done / u.total) * 100) : 0
     }));
 
-    // ===============================
-    // CACHE UPDATE
-    // ===============================
     cache.dashboard = {
       kpis: { total, done, active, blocked, progress },
       kanban,
@@ -163,11 +163,11 @@ app.get('/', (req, res) => {
 
 
 // ===============================
-// 📊 DASHBOARD (CACHE - LOVABLE USA ISSO)
+// 📊 DASHBOARD
 // ===============================
 app.get('/dashboard', async (req, res) => {
   if (!cache.dashboard) {
-    await syncDashboard(); // primeira carga segura
+    await syncDashboard();
   }
 
   res.json(cache.dashboard);
@@ -175,7 +175,83 @@ app.get('/dashboard', async (req, res) => {
 
 
 // ===============================
-// 🔄 FORÇA SYNC (MANUAL)
+// 📋 CHECKLIST (NOVO)
+// ===============================
+app.get('/checklist/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const parent = await axios.get(
+      `https://dev.azure.com/${ORG}/${PROJECT}/_apis/wit/workitems/${id}?$expand=relations&api-version=7.0`,
+      {
+        headers: { Authorization: `Basic ${auth}` }
+      }
+    );
+
+    const fields = parent.data.fields || {};
+
+    const titulo = fields["System.Title"];
+    const responsavel = fields["System.AssignedTo"]?.displayName || "Sem responsável";
+    const status = fields["System.State"];
+
+    const relations = parent.data.relations || [];
+
+    const children = relations.filter(r =>
+      r.rel === 'System.LinkTypes.Hierarchy-Forward'
+    );
+
+    const ids = children.map(c => c.url.split('/').pop());
+
+    let checklist = [];
+
+    if (ids.length > 0) {
+      const chunkSize = 50;
+      let allChildren = [];
+
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+
+        const resp = await axios.get(
+          `https://dev.azure.com/${ORG}/${PROJECT}/_apis/wit/workitems?ids=${chunk.join(',')}&api-version=7.0`,
+          {
+            headers: { Authorization: `Basic ${auth}` }
+          }
+        );
+
+        allChildren = allChildren.concat(resp.data.value);
+      }
+
+      checklist = allChildren.map(item => ({
+        id: item.id,
+        titulo: item.fields["System.Title"],
+        status: item.fields["System.State"]
+      }));
+    }
+
+    const total = checklist.length;
+    const concluidos = checklist.filter(i => i.status === "Done").length;
+    const progresso = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+
+    res.json({
+      id,
+      titulo,
+      responsavel,
+      status,
+      progresso,
+      total,
+      concluidos,
+      checklist
+    });
+
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({ error: 'Erro ao montar checklist' });
+  }
+});
+
+
+// ===============================
+// 🔄 MANUAL SYNC
 // ===============================
 app.post('/sync', async (req, res) => {
   await syncDashboard();
@@ -189,6 +265,5 @@ app.post('/sync', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 
-  // 🔥 primeira sync ao subir servidor
   syncDashboard();
 });

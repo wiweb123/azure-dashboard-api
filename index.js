@@ -108,9 +108,10 @@ async function syncDashboard() {
     // ===============================
 const query = {
   query: `
-    SELECT TOP 1000 [System.Id]
+    SELECT
+      [System.Id]
     FROM WorkItems
-    WHERE 
+    WHERE
       [System.TeamProject] = '${PROJECT}'
 
       AND [System.WorkItemType] IN (
@@ -128,7 +129,6 @@ const query = {
     ORDER BY [System.ChangedDate] DESC
   `
 };
-
     // ===============================
     // BUSCA IDS
     // ===============================

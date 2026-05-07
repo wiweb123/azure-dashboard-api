@@ -106,13 +106,25 @@ async function syncDashboard() {
     // ===============================
     // QUERY WIQL
     // ===============================
-    const query = {
+const query = {
   query: `
-    SELECT [System.Id]
+    SELECT TOP 1000 [System.Id]
     FROM WorkItems
     WHERE 
       [System.TeamProject] = '${PROJECT}'
+
+      AND [System.WorkItemType] IN (
+        'Backoffice',
+        'Marketplaces'
+      )
+
+      AND [System.AreaPath] IN (
+        'Onboarding - E-Commerce Domain\\ANYMARKET\\ANYMARKET Brasil\\Thrusters\\Marketplace Domain\\Ágeis (Performance e Enterprise)',
+        'Onboarding - E-Commerce Domain\\ANYMARKET\\ANYMARKET Brasil\\Kickstarters\\Backoffice'
+      )
+
       AND [System.ChangedDate] >= '2025-01-01T00:00:00Z'
+
     ORDER BY [System.ChangedDate] DESC
   `
 };

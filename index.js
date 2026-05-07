@@ -107,15 +107,15 @@ async function syncDashboard() {
     // QUERY WIQL
     // ===============================
     const query = {
-      query: `
-        SELECT [System.Id]
-        FROM WorkItems
-        WHERE 
-          [System.TeamProject] = '${PROJECT}'
-          AND [System.ChangedDate] >= @StartOfDay('-120')
-        ORDER BY [System.ChangedDate] DESC
-      `
-    };
+  query: `
+    SELECT [System.Id]
+    FROM WorkItems
+    WHERE 
+      [System.TeamProject] = '${PROJECT}'
+      AND [System.ChangedDate] >= '2025-01-01T00:00:00Z'
+    ORDER BY [System.ChangedDate] DESC
+  `
+};
 
     // ===============================
     // BUSCA IDS

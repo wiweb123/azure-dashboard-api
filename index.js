@@ -509,20 +509,31 @@ console.log(JSON.stringify(relations, null, 2));
         allChildren = allChildren.concat(resp.data.value);
       }
 
-      checklist = allChildren.map(item => ({
+      checklist = allChildren.map(item => {
 
-        id: item.id,
+  const fields = item.fields || {};
 
-        titulo:
-          item.fields["System.Title"] || "Sem título",
+  const status = fields["System.State"] || "Sem status";
 
-        status:
-          item.fields["System.State"] || "Sem status",
+  const normalized = status.toLowerCase();
 
-        responsavel:
-          item.fields["System.AssignedTo"]?.displayName ||
-          "Sem responsável"
-      }));
+  const concluido =
+    normalized.includes("done") ||
+    normalized.includes("closed") ||
+    normalized.includes("completed") ||
+    normalized.includes("resolved") ||
+    normalized.includes("concl");
+
+  return {
+    id: item.id,
+    titulo: fields["System.Title"] || "Sem título",
+    status,
+    responsavel:
+      fields["System.AssignedTo"]?.displayName ||
+      "Sem responsável",
+    concluido
+  };
+});
     }
 
     // ===============================
@@ -530,11 +541,7 @@ console.log(JSON.stringify(relations, null, 2));
     // ===============================
     const total = checklist.length;
 
-    const concluidos = checklist.filter(i =>
-      (i.status || "")
-        .toLowerCase()
-        .includes("done")
-    ).length;
+    const concluidos = checklist.filter(i => i.concluido).length;
 
     const progresso =
       total > 0

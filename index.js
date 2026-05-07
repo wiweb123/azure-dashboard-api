@@ -132,19 +132,35 @@ async function syncDashboard() {
     );
 
     const ids = wiqlResponse.data.workItems.map(w => w.id);
+    
+    console.log("TOTAL IDS:", ids.length);
 
     console.log(`📦 Total IDs encontrados: ${ids.length}`);
 
     if (ids.length === 0) {
 
-      cache.dashboard = {
-        kpis: {},
-        kanban: {},
-        users: []
-      };
+  console.log("⚠️ Nenhum item encontrado");
 
-      return;
-    }
+  cache.dashboard = {
+    kpis: {
+      total: 0,
+      done: 0,
+      active: 0,
+      blocked: 0,
+      progress: 0
+    },
+    kanban: {
+      "Fila Seller": [],
+      "Fila Analista": [],
+      "Em Andamento": [],
+      "Em Impedimento": [],
+      "Concluído": []
+    },
+    users: []
+  };
+
+  return;
+}
 
     // ===============================
     // BUSCA EM LOTES

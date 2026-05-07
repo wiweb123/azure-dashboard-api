@@ -470,6 +470,9 @@ app.get('/checklist/:id', async (req, res) => {
     const relations =
       parent.data.relations || [];
 
+    console.log("RELATIONS:");
+console.log(JSON.stringify(relations, null, 2));
+
     // ===============================
     // FILHOS
     // ===============================

@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -32,7 +33,7 @@ let cache = {
 };
 
 // ===============================
-// 🧠 HELPER STATUS MAP
+// 🧠 MAPEAMENTO KANBAN
 // ===============================
 function mapKanbanColumn(status) {
 
@@ -73,7 +74,7 @@ function mapKanbanColumn(status) {
     return "Em Impedimento";
   }
 
-  // DONE
+  // CONCLUÍDO
   if (
     normalized.includes("done") ||
     normalized.includes("closed") ||
@@ -91,7 +92,10 @@ function mapKanbanColumn(status) {
 // ===============================
 async function syncDashboard() {
 
-  if (cache.loading) return;
+  if (cache.loading) {
+    console.log("⏳ Sync já em execução...");
+    return;
+  }
 
   try {
 
@@ -100,7 +104,7 @@ async function syncDashboard() {
     console.log("🔄 Sync Azure iniciado...");
 
     // ===============================
-    // BUSCA IDs
+    // QUERY WIQL
     // ===============================
     const query = {
       query: `
@@ -108,22 +112,28 @@ async function syncDashboard() {
         FROM WorkItems
         WHERE 
           [System.TeamProject] = '${PROJECT}'
-          AND [System.ChangedDate] >= '2025-01-01'
+          AND [System.ChangedDate] >= @StartOfDay('-120')
         ORDER BY [System.ChangedDate] DESC
       `
     };
 
+    // ===============================
+    // BUSCA IDS
+    // ===============================
     const wiqlResponse = await axios.post(
       `https://dev.azure.com/${ORG}/${PROJECT}/_apis/wit/wiql?api-version=7.0`,
       query,
       {
         headers: {
           Authorization: `Basic ${auth}`
-        }
+        },
+        timeout: 60000
       }
     );
 
     const ids = wiqlResponse.data.workItems.map(w => w.id);
+
+    console.log(`📦 Total IDs encontrados: ${ids.length}`);
 
     if (ids.length === 0) {
 
@@ -147,19 +157,31 @@ async function syncDashboard() {
 
       const chunk = ids.slice(i, i + chunkSize);
 
-      const resp = await axios.get(
-        `https://dev.azure.com/${ORG}/${PROJECT}/_apis/wit/workitems?ids=${chunk.join(',')}&api-version=7.0`,
-        {
-          headers: {
-            Authorization: `Basic ${auth}`
+      try {
+
+        const resp = await axios.get(
+          `https://dev.azure.com/${ORG}/${PROJECT}/_apis/wit/workitems?ids=${chunk.join(',')}&api-version=7.0`,
+          {
+            headers: {
+              Authorization: `Basic ${auth}`
+            },
+            timeout: 60000
           }
-        }
-      );
+        );
 
-      allItems = allItems.concat(resp.data.value);
+        allItems = allItems.concat(resp.data.value);
 
-      console.log(`📦 Lote carregado ${i + chunk.length}/${ids.length}`);
+        console.log(`✅ Lote carregado ${i + chunk.length}/${ids.length}`);
+
+      } catch (err) {
+
+        console.log(`❌ Erro lote ${i}`);
+
+        console.log(err.message);
+      }
     }
+
+    console.log(`📊 Total carregado: ${allItems.length}`);
 
     // ===============================
     // KANBAN
@@ -178,18 +200,20 @@ async function syncDashboard() {
     const users = {};
 
     // ===============================
-    // FILTRA SOMENTE ITENS PRINCIPAIS
+    // FILTRO ITENS PRINCIPAIS
     // ===============================
     const filteredItems = allItems.filter(item => {
 
       const fields = item.fields || {};
 
-      const workItemType = fields["System.WorkItemType"] || "";
+      const workItemType = (
+        fields["System.WorkItemType"] || ""
+      ).toLowerCase();
 
-      // IGNORA SUBTASKS / CHECKLISTS
+      // REMOVE SUBTASKS
       if (
-        workItemType.toLowerCase() === "task" ||
-        workItemType.toLowerCase() === "subtask"
+        workItemType === "task" ||
+        workItemType === "subtask"
       ) {
         return false;
       }
@@ -197,21 +221,36 @@ async function syncDashboard() {
       return true;
     });
 
+    console.log(`📌 Itens principais: ${filteredItems.length}`);
+
     // ===============================
     // KPIs
     // ===============================
     const total = filteredItems.length;
 
     const done = filteredItems.filter(i =>
-      (i.fields["System.State"] || "").toLowerCase().includes("done")
+      (i.fields["System.State"] || "")
+        .toLowerCase()
+        .includes("done")
     ).length;
 
-    const active = filteredItems.filter(i =>
-      (i.fields["System.State"] || "").toLowerCase().includes("active")
-    ).length;
+    const active = filteredItems.filter(i => {
+
+      const state = (
+        i.fields["System.State"] || ""
+      ).toLowerCase();
+
+      return (
+        state.includes("active") ||
+        state.includes("andamento")
+      );
+
+    }).length;
 
     const blocked = filteredItems.filter(i =>
-      (i.fields["System.State"] || "").toLowerCase().includes("blocked")
+      (i.fields["System.State"] || "")
+        .toLowerCase()
+        .includes("blocked")
     ).length;
 
     const progress = total > 0
@@ -225,11 +264,14 @@ async function syncDashboard() {
 
       const fields = item.fields || {};
 
-      const status = fields["System.State"] || "Sem Status";
+      const status =
+        fields["System.State"] || "Sem status";
 
-      const title = fields["System.Title"] || "Sem título";
+      const title =
+        fields["System.Title"] || "Sem título";
 
-      const workItemType = fields["System.WorkItemType"] || "";
+      const workItemType =
+        fields["System.WorkItemType"] || "";
 
       const user = fields["System.AssignedTo"]
         ? (
@@ -238,6 +280,8 @@ async function syncDashboard() {
           )
         : "Sem responsável";
 
+      const column = mapKanbanColumn(status);
+
       const card = {
         id: item.id,
         titulo: title,
@@ -245,8 +289,6 @@ async function syncDashboard() {
         status,
         tipo: workItemType
       };
-
-      const column = mapKanbanColumn(status);
 
       kanban[column].push(card);
 
@@ -298,7 +340,9 @@ async function syncDashboard() {
       },
       kanban,
       users: usersArray,
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      totalItemsAzure: allItems.length,
+      totalItemsFiltrados: filteredItems.length
     };
 
     cache.lastSync = new Date();
@@ -334,6 +378,8 @@ app.get('/dashboard', async (req, res) => {
 
     if (!cache.dashboard) {
 
+      console.log("⚠️ Cache vazio");
+
       await syncDashboard();
     }
 
@@ -350,13 +396,15 @@ app.get('/dashboard', async (req, res) => {
 });
 
 // ===============================
-// 📋 CHECKLIST DETALHE CARD
+// 📋 DETALHE CARD + CHECKLIST
 // ===============================
 app.get('/checklist/:id', async (req, res) => {
 
   const { id } = req.params;
 
   try {
+
+    console.log(`📋 Abrindo checklist ${id}`);
 
     // ===============================
     // CARD PAI
@@ -366,26 +414,31 @@ app.get('/checklist/:id', async (req, res) => {
       {
         headers: {
           Authorization: `Basic ${auth}`
-        }
+        },
+        timeout: 60000
       }
     );
 
     const fields = parent.data.fields || {};
 
-    const titulo = fields["System.Title"] || "Sem título";
+    const titulo =
+      fields["System.Title"] || "Sem título";
 
     const responsavel =
       fields["System.AssignedTo"]?.displayName ||
       "Sem responsável";
 
-    const status = fields["System.State"] || "Sem status";
+    const status =
+      fields["System.State"] || "Sem status";
 
-    const tipo = fields["System.WorkItemType"] || "";
+    const tipo =
+      fields["System.WorkItemType"] || "";
 
     const descricao =
       fields["System.Description"] || "";
 
-    const relations = parent.data.relations || [];
+    const relations =
+      parent.data.relations || [];
 
     // ===============================
     // FILHOS
@@ -415,7 +468,8 @@ app.get('/checklist/:id', async (req, res) => {
           {
             headers: {
               Authorization: `Basic ${auth}`
-            }
+            },
+            timeout: 60000
           }
         );
 
@@ -444,7 +498,9 @@ app.get('/checklist/:id', async (req, res) => {
     const total = checklist.length;
 
     const concluidos = checklist.filter(i =>
-      (i.status || "").toLowerCase().includes("done")
+      (i.status || "")
+        .toLowerCase()
+        .includes("done")
     ).length;
 
     const progresso =
@@ -494,6 +550,8 @@ app.post('/sync', async (req, res) => {
     });
 
   } catch (err) {
+
+    console.error(err.message);
 
     res.status(500).json({
       error: "Erro ao executar sync"

@@ -125,7 +125,7 @@ const query = {
 
       AND [System.WorkItemType] IN (
         'Backoffice',
-        'Marketplaces'
+        'Marketplace'
       )
 
       AND [System.AreaPath] IN (

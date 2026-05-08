@@ -24,6 +24,15 @@ const PAT = process.env.AZURE_PAT;
 const auth = Buffer.from(`:${PAT}`).toString('base64');
 
 // ===============================
+// 🔐 TOKENS SELLERS
+// ===============================
+const sellerTokens = {
+  "truebrands123": "TRUE BRANDS",
+  "terhalife123": "TERHA LIFE",
+  "redme123": "REDME COMERCIO"
+};
+
+// ===============================
 // 🧠 CACHE GLOBAL
 // ===============================
 let cache = {
@@ -421,6 +430,63 @@ app.get('/dashboard', async (req, res) => {
 
     res.status(500).json({
       error: "Erro ao carregar dashboard"
+    });
+  }
+});
+
+app.get('/seller/:token', async (req, res) => {
+
+  try {
+
+    const { token } = req.params;
+
+    const sellerName = sellerTokens[token];
+
+    if (!sellerName) {
+      return res.status(404).json({
+        error: "Seller não encontrado"
+      });
+    }
+
+    // pega todos os cards do cache
+    const allCards = [
+      ...cache.dashboard.kanban["Fila Seller"],
+      ...cache.dashboard.kanban["Fila Analista"],
+      ...cache.dashboard.kanban["Em Andamento"],
+      ...cache.dashboard.kanban["Em Impedimento"],
+      ...cache.dashboard.kanban["Concluído"]
+    ];
+
+    // filtra seller
+    const sellerProjects = allCards.filter(card =>
+      card.titulo.toLowerCase().includes(sellerName.toLowerCase())
+    );
+
+    const totalProjects = sellerProjects.length;
+
+    const doneProjects = sellerProjects.filter(card =>
+      card.status?.toLowerCase().includes("done") ||
+      card.status?.toLowerCase().includes("concl")
+    ).length;
+
+    const progress = totalProjects > 0
+      ? Math.round((doneProjects / totalProjects) * 100)
+      : 0;
+
+    res.json({
+      seller: sellerName,
+      progress,
+      totalProjects,
+      doneProjects,
+      projects: sellerProjects
+    });
+
+  } catch (err) {
+
+    console.error(err.message);
+
+    res.status(500).json({
+      error: "Erro ao carregar seller"
     });
   }
 });

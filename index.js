@@ -154,7 +154,7 @@ const query = {
 
     const ids = wiqlResponse.data.workItems
   .map(w => w.id)
-  .slice(0, 1000);
+  .slice(0, 10000);
     
     console.log("TOTAL IDS:", ids.length);
 
